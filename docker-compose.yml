@@ -1,0 +1,98 @@
+version: "3.4"
+
+networks:
+  consul:
+    external: true
+
+services:
+  
+  consul:
+    image: consul:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - target: 8500
+        published: 8500
+        mode: host
+    networks:
+      consul:
+        aliases:
+          - consul.cluster
+    environment:
+      - 'CONSUL_LOCAL_CONFIG={ "skip_leave_on_interrupt": true, "acl_datacenter":"mydc", "acl_default_policy":"allow", "acl_down_policy":"extend-cache", "datacenter":"mydc", "encrypt":"GEph2hPCk9GFM39iE2MiLA==", "data_dir":"/consul/data", "server":true }'
+      - CONSUL_BIND_INTERFACE=eth0
+    command: "agent -ui -server -bootstrap -client 0.0.0.0 -retry-join consul.client -retry-join consul.client2"
+    deploy:
+      placement:
+        constraints: [node.role == consul]
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: continue
+
+  client:
+    image: consul:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      consul:
+        aliases:
+          - consul.client
+    environment:      
+      - 'CONSUL_LOCAL_CONFIG={ "skip_leave_on_interrupt": true, "acl_datacenter":"mydc", "acl_default_policy":"allow", "acl_down_policy":"extend-cache", "datacenter":"mydc", "encrypt":"GEph2hPCk9GFM39iE2MiLA==", "data_dir":"/consul/data", "server":true }'
+      - CONSUL_BIND_INTERFACE=eth0
+    command: "agent -ui -server -client 0.0.0.0 -retry-join consul.cluster -retry-join consul.client2"
+    deploy:
+      placement:
+        constraints: [node.role == client]
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: continue
+
+  client2:
+    image: consul:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      consul:
+        aliases:
+          - consul.client2
+    environment:      
+      - 'CONSUL_LOCAL_CONFIG={ "skip_leave_on_interrupt": true, "acl_datacenter":"mydc", "acl_default_policy":"allow", "acl_down_policy":"extend-cache", "datacenter":"mydc", "encrypt":"GEph2hPCk9GFM39iE2MiLA==", "data_dir":"/consul/data", "server":true }'
+      - CONSUL_BIND_INTERFACE=eth0
+    command: "agent -ui -server -client 0.0.0.0 -retry-join consul.cluster -retry-join consul.client"
+    deploy:
+      placement:
+        constraints: [node.role == client2]
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: continue
+
+  registrator:
+      image: gliderlabs/registrator:latest
+      command: -internal consul://consul.cluster:8500
+      volumes:
+        - /var/run/docker.sock:/tmp/docker.sock
+      networks:
+        - consul
+      depends_on:
+        - "consul"
+      deploy:
+        mode: global
